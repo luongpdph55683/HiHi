@@ -300,6 +300,21 @@ function checkout() {
         return;
     }
 
+    // Kiểm tra đăng nhập
+    const currentUser = JSON.parse(localStorage.getItem('currentUser')) || 
+                       JSON.parse(sessionStorage.getItem('currentUser'));
+    
+    if (!currentUser) {
+        showNotification('Vui lòng đăng nhập để tiến hành thanh toán!', 'error');
+        setTimeout(() => {
+            window.location.href = 'auth.html';
+        }, 1500);
+        return;
+    }
+
+    // Lấy thông tin người nhận hàng đã lưu (nếu có)
+    const savedShippingInfo = JSON.parse(localStorage.getItem(`shippingInfo_${currentUser.email}`)) || {};
+
     // Tạo form nhập thông tin thanh toán
     const checkoutForm = document.createElement('div');
     checkoutForm.className = 'checkout-form';
@@ -308,42 +323,48 @@ function checkout() {
             <h2>Thông Tin Thanh Toán</h2>
             <form id="paymentForm">
                 <div class="form-group">
-                    <label for="name">Họ và Tên</label>
-                    <input type="text" id="name" required>
+                    <label for="name">Họ và Tên Người Nhận</label>
+                    <input type="text" id="name" value="${savedShippingInfo.name || currentUser.name || ''}" required>
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" required>
+                    <input type="email" id="email" value="${currentUser.email}" readonly>
                 </div>
                 <div class="form-group">
                     <label for="phone">Số Điện Thoại</label>
-                    <input type="tel" id="phone" required>
+                    <input type="tel" id="phone" value="${savedShippingInfo.phone || ''}" required>
                 </div>
                 <div class="form-group">
                     <label for="address">Địa Chỉ Giao Hàng</label>
-                    <textarea id="address" required></textarea>
+                    <textarea id="address" required>${savedShippingInfo.address || ''}</textarea>
                 </div>
                 <div class="form-group">
                     <label for="note">Ghi Chú</label>
-                    <textarea id="note"></textarea>
+                    <textarea id="note">${savedShippingInfo.note || ''}</textarea>
                 </div>
                 <div class="form-group">
                     <label for="paymentMethod">Phương Thức Thanh Toán</label>
                     <select id="paymentMethod" required>
                         <option value="">Chọn phương thức thanh toán</option>
-                        <option value="cod">Thanh Toán Khi Nhận Hàng (COD)</option>
-                        <option value="bank">Chuyển Khoản Ngân Hàng</option>
-                        <option value="momo">Ví MoMo</option>
-                        <option value="vnpay">VNPay</option>
+                        <option value="cod" ${savedShippingInfo.paymentMethod === 'cod' ? 'selected' : ''}>Thanh Toán Khi Nhận Hàng (COD)</option>
+                        <option value="bank" ${savedShippingInfo.paymentMethod === 'bank' ? 'selected' : ''}>Chuyển Khoản Ngân Hàng</option>
+                        <option value="momo" ${savedShippingInfo.paymentMethod === 'momo' ? 'selected' : ''}>Ví MoMo</option>
+                        <option value="vnpay" ${savedShippingInfo.paymentMethod === 'vnpay' ? 'selected' : ''}>VNPay</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="deliveryMethod">Phương Thức Giao Hàng</label>
                     <select id="deliveryMethod" required>
                         <option value="">Chọn phương thức giao hàng</option>
-                        <option value="standard">Giao Hàng Tiêu Chuẩn (2-3 ngày)</option>
-                        <option value="express">Giao Hàng Nhanh (24h)</option>
+                        <option value="standard" ${savedShippingInfo.deliveryMethod === 'standard' ? 'selected' : ''}>Giao Hàng Tiêu Chuẩn (2-3 ngày)</option>
+                        <option value="express" ${savedShippingInfo.deliveryMethod === 'express' ? 'selected' : ''}>Giao Hàng Nhanh (24h)</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="saveInfo" ${savedShippingInfo.saveInfo ? 'checked' : ''}>
+                        Lưu thông tin cho lần đặt hàng sau
+                    </label>
                 </div>
                 <div class="form-buttons">
                     <button type="button" class="cancel-btn" onclick="closeCheckoutForm()">Hủy</button>
@@ -369,6 +390,22 @@ function checkout() {
             paymentMethod: document.getElementById('paymentMethod').value,
             deliveryMethod: document.getElementById('deliveryMethod').value
         };
+
+        // Lưu thông tin người nhận nếu được chọn
+        if (document.getElementById('saveInfo').checked) {
+            const shippingInfo = {
+                name: customerInfo.name,
+                phone: customerInfo.phone,
+                address: customerInfo.address,
+                note: customerInfo.note,
+                paymentMethod: customerInfo.paymentMethod,
+                deliveryMethod: customerInfo.deliveryMethod,
+                saveInfo: true
+            };
+            localStorage.setItem(`shippingInfo_${currentUser.email}`, JSON.stringify(shippingInfo));
+        } else {
+            localStorage.removeItem(`shippingInfo_${currentUser.email}`);
+        }
 
         // Tính toán phí vận chuyển
         const shippingFee = customerInfo.deliveryMethod === 'express' ? 50000 : 30000;
@@ -403,19 +440,20 @@ function checkout() {
         let orders = JSON.parse(localStorage.getItem('orders')) || [];
         orders.push(order);
         localStorage.setItem('orders', JSON.stringify(orders));
-
-        // Lưu đơn hàng hiện tại
-        localStorage.setItem('currentOrder', JSON.stringify(order));
         
         // Xóa giỏ hàng
         localStorage.removeItem('cart');
+        cart = [];
         
         // Hiển thị thông báo thành công
         showNotification('Đặt hàng thành công! Chúng tôi sẽ liên hệ với bạn sớm nhất.', 'success');
         
-        // Chuyển hướng đến trang hóa đơn sau 2 giây
+        // Đóng form thanh toán
+        closeCheckoutForm();
+        
+        // Chuyển hướng đến trang lịch sử đơn hàng sau 2 giây
         setTimeout(() => {
-            window.location.href = 'invoice.html';
+            window.location.href = 'orders.html';
         }, 2000);
     });
 }
@@ -805,13 +843,17 @@ document.addEventListener('DOMContentLoaded', function() {
 // Orders Page Functions
 function displayOrders() {
     const ordersList = document.querySelector('.orders-list');
-    if (!ordersList) return;
+    if (!ordersList) {
+        console.log('Không tìm thấy phần tử .orders-list');
+        return;
+    }
 
     // Lấy thông tin người dùng hiện tại
     const currentUser = JSON.parse(localStorage.getItem('currentUser')) || 
                        JSON.parse(sessionStorage.getItem('currentUser'));
     
     if (!currentUser) {
+        console.log('Người dùng chưa đăng nhập');
         window.location.href = 'auth.html';
         return;
     }
@@ -821,10 +863,14 @@ function displayOrders() {
     console.log('Tất cả đơn hàng:', orders);
 
     // Lọc đơn hàng của người dùng hiện tại
-    const userOrders = orders.filter(order => order.customer.email === currentUser.email);
+    const userOrders = orders.filter(order => {
+        console.log('So sánh email:', order.customer.email, currentUser.email);
+        return order.customer.email === currentUser.email;
+    });
     console.log('Đơn hàng của người dùng:', userOrders);
 
     if (userOrders.length === 0) {
+        console.log('Không có đơn hàng nào');
         ordersList.innerHTML = '<p class="no-orders">Bạn chưa có đơn hàng nào.</p>';
         return;
     }
@@ -833,37 +879,43 @@ function displayOrders() {
     userOrders.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Hiển thị danh sách đơn hàng
-    ordersList.innerHTML = userOrders.map(order => `
-        <div class="order-card">
-            <div class="order-header">
-                <div class="order-info">
-                    <span class="order-id">Đơn hàng #${order.id}</span>
-                    <span class="order-date">${formatDate(order.date)}</span>
+    try {
+        ordersList.innerHTML = userOrders.map(order => `
+            <div class="order-card">
+                <div class="order-header">
+                    <div class="order-info">
+                        <span class="order-id">Đơn hàng #${order.id}</span>
+                        <span class="order-date">${formatDate(order.date)}</span>
+                    </div>
+                    <span class="order-status status-${order.status || 'pending'}">${getOrderStatus(order.status || 'pending')}</span>
                 </div>
-                <span class="order-status status-${order.status || 'pending'}">${getOrderStatus(order.status || 'pending')}</span>
-            </div>
-            <div class="order-content">
-                <div class="order-items">
-                    ${order.items.map(item => `
-                        <div class="order-item">
-                            <img src="${item.image}" alt="${item.name}" class="order-item-image">
-                            <div class="order-item-details">
-                                <h3>${item.name}</h3>
-                                <span class="order-item-price">${formatPrice(item.price)}</span>
-                                <span class="order-item-quantity">Số lượng: ${item.quantity}</span>
+                <div class="order-content">
+                    <div class="order-items">
+                        ${order.items.map(item => `
+                            <div class="order-item">
+                                <img src="${item.image}" alt="${item.name}" class="order-item-image">
+                                <div class="order-item-details">
+                                    <h3>${item.name}</h3>
+                                    <span class="order-item-price">${formatPrice(item.price)}</span>
+                                    <span class="order-item-quantity">Số lượng: ${item.quantity}</span>
+                                </div>
                             </div>
-                        </div>
-                    `).join('')}
-                </div>
-                <div class="order-summary">
-                    <span class="order-total">Tổng cộng: ${formatPrice(order.total)}</span>
-                    <button class="view-details-btn" onclick="showOrderDetails('${order.id}')">
-                        Xem chi tiết
-                    </button>
+                        `).join('')}
+                    </div>
+                    <div class="order-summary">
+                        <span class="order-total">Tổng cộng: ${formatPrice(order.total)}</span>
+                        <button class="view-details-btn" onclick="showOrderDetails('${order.id}')">
+                            Xem chi tiết
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-    `).join('');
+        `).join('');
+        console.log('Đã hiển thị đơn hàng thành công');
+    } catch (error) {
+        console.error('Lỗi khi hiển thị đơn hàng:', error);
+        ordersList.innerHTML = '<p class="error">Có lỗi xảy ra khi hiển thị đơn hàng. Vui lòng thử lại sau.</p>';
+    }
 }
 
 function showOrderDetails(orderId) {

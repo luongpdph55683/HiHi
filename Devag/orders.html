@@ -90,7 +90,10 @@
             
             // Log để debug
             console.log('Current user:', currentUser);
-            console.log('Orders:', JSON.parse(localStorage.getItem('orders') || '[]'));
+            const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+            console.log('All orders:', orders);
+            const userOrders = orders.filter(order => order.customer.email === currentUser.email);
+            console.log('User orders:', userOrders);
         });
     </script>
 </body>
